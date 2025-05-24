@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta http-equiv="X-UA-Compatible" content="IE=edge"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>JestApp – WhatsApp Clone</title>
+  <!-- Font Awesome for icons -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css"/>
+  <style>
+    /*── RESET & FONT ─────────────────────────────────────────*/
+    * { margin:0; padding:0; box-sizing:border-box; }
+    html,body { height:100%; font-family:'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
+    #app { display:flex; height:100%; }
+
+    /*── SIDEBAR ──────────────────────────────────────────────*/
+    .sidebar { width:30%; border-right:1px solid #ddd; display:flex; flex-direction:column; }
+    .sidebar-header { padding:10px; display:flex; align-items:center; justify-content:space-between; border-bottom:1px solid #ddd; }
+    .sidebar-header img { width:40px; height:40px; border-radius:50%; }
+    .sidebar-header .icons i { margin:0 8px; cursor:pointer; color:#555; }
+    .search { padding:10px; }
+    .search input { width:100%; padding:8px; border-radius:20px; border:1px solid #ccc; }
+    .contacts { flex:1; overflow-y:auto; }
+    .contact { padding:10px; display:flex; align-items:center; cursor:pointer; border-bottom:1px solid #f0f0f0; transition:background .2s; }
+    .contact:hover { background:#f5f5f5; }
+    .contact img { width:40px; height:40px; border-radius:50%; margin-right:10px; }
+    .contact .info h4 { font-size:1rem; margin-bottom:4px; }
+    .contact .info p { font-size:.85rem; color:#555; }
+
+    /*── CHAT PANEL ──────────────────────────────────────────*/
+    .chat { flex:1; display:flex; flex-direction:column; }
+    .chat-header { padding:10px; border-bottom:1px solid #ddd; display:flex; align-items:center; }
+    .chat-header img { width:40px; height:40px; border-radius:50%; margin-right:10px; }
+    .chat-header .info h4 { font-size:1rem; }
+    .messages { flex:1; padding:10px; overflow-y:auto; background:#e5ddd5; }
+    .message { margin:10px 0; max-width:60%; padding:8px 12px; border-radius:8px; position:relative; word-wrap:break-word; }
+    .message.sent { background:#dcf8c6; margin-left:auto; }
+    .message.received { background:#fff; }
+    .input-area { padding:10px; border-top:1px solid #ddd; display:flex; align-items:center; }
+    .input-area input { flex:1; padding:10px; border:none; border-radius:20px; background:#f0f0f0; }
+    .input-area button { background:none; border:none; font-size:1.5rem; margin-left:10px; cursor:pointer; color:#128C7E; }
+  </style>
+</head>
+<body>
+  <div id="app">
+    <!-- SIDEBAR -->
+    <div class="sidebar">
+      <div class="sidebar-header">
+        <img src="https://www.w3schools.com/howto/img_avatar.png" alt="You">
+        <div class="icons">
+          <i class="fas fa-comment-dots"></i>
+          <i class="fas fa-ellipsis-v"></i>
+        </div>
+      </div>
+      <div class="search">
+        <input id="search" placeholder="Search or start new chat"/>
+      </div>
+      <div id="contacts" class="contacts"></div>
+    </div>
+
+    <!-- CHAT WINDOW -->
+    <div class="chat">
+      <div class="chat-header">
+        <img id="chatAvatar" src="" alt="Avatar"/>
+        <div class="info"><h4 id="chatName">Select a chat</h4></div>
+      </div>
+      <div id="messages" class="messages"></div>
+      <div class="input-area">
+        <input id="msgInput" placeholder="Type a message"/>
+        <button id="sendBtn"><i class="fas fa-paper-plane"></i></button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Firebase + App Logic -->
+  <script type="module">
+    import { initializeApp }             from "https://www.gstatic.com/firebasejs/9.23.0/firebase-app.js";
+    import { getDatabase, ref, push, onChildAdded, set }
+                                        from "https://www.gstatic.com/firebasejs/9.23.0/firebase-database.js";
+
+    // ── 1. Init Firebase ───────────────────────────────────
+    const firebaseConfig = {
+      apiKey: "AIzaSyDbwbnHTqzgkFZ6ZWVKWaKIPZDB1UbvC7Y",
+      authDomain: "jestapp-c25af.firebaseapp.com",
+      databaseURL: "https://jestapp-c25af-default-rtdb.asia-southeast1.firebasedatabase.app",
+      projectId: "jestapp-c25af",
+      storageBucket: "jestapp-c25af.appspot.com",
+      messagingSenderId: "253551450767",
+      appId: "1:253551450767:web:7932670868f2fe10a56efa",
+      measurementId: "G-B60BDT877T"
+    };
+    const app      = initializeApp(firebaseConfig);
+    const db       = getDatabase(app);
+
+    // ── 2. DOM & State ─────────────────────────────────────
+    const contactsEl = document.getElementById('contacts');
+    const messagesEl = document.getElementById('messages');
+    const chatAvatar = document.getElementById('chatAvatar');
+    const chatNameEl = document.getElementById('chatName');
+    const msgInput   = document.getElementById('msgInput');
+    const sendBtn    = document.getElementById('sendBtn');
+
+    let currentChatId = null;
+    const userName    = prompt('Enter your name:');
+
+    // ── 3. Load Static Contacts ────────────────────────────
+    const contacts = [
+      { id:'global', name:'Global Chat', avatar:'https://www.w3schools.com/howto/img_avatar2.png' }
+    ];
+    contacts.forEach(c => {
+      const d = document.createElement('div');
+      d.className = 'contact';
+      d.innerHTML = `<img src="${c.avatar}"/><div class="info"><h4>${c.name}</h4></div>`;
+      d.onclick = () => selectChat(c);
+      contactsEl.append(d);
+    });
+
+    // ── 4. Select Chat & Listen ────────────────────────────
+    function selectChat(chat) {
+      currentChatId = chat.id;
+      chatAvatar.src = chat.avatar;
+      chatNameEl.textContent = chat.name;
+      messagesEl.innerHTML = '';
+      const msgsRef = ref(db, `chats/${chat.id}/messages`);
+      onChildAdded(msgsRef, snap => displayMessage(snap.val()));
+    }
+
+    // ── 5. Display Message ─────────────────────────────────
+    function displayMessage({ sender, text }) {
+      const el = document.createElement('div');
+      el.className = `message ${sender===userName?'sent':'received'}`;
+      el.textContent = `${sender}: ${text}`;
+      messagesEl.append(el);
+      messagesEl.scrollTop = messagesEl.scrollHeight;
+    }
+
+    // ── 6. Send Message ────────────────────────────────────
+    sendBtn.onclick = sendMessage;
+    msgInput.addEventListener('keypress', e => { if(e.key==='Enter') sendMessage(); });
+
+    function sendMessage() {
+      const text = msgInput.value.trim();
+      if(!text || !currentChatId) return;
+      const newRef = push(ref(db, `chats/${currentChatId}/messages`));
+      set(newRef, { sender:userName, text, timestamp:Date.now() });
+      msgInput.value = '';
+    }
+  </script>
+</body>
+</html>
